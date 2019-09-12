@@ -2,35 +2,30 @@ package main
 import (
 	"fmt"
 	"syscall"
-	"os"
 )
 
 func main() {
-	fd, err:= syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_UDP)
+	fd, err:= syscall.Socket(syscall.AF_PACKET, syscall.SOCK_RAW, int(Htons(syscall.ETH_P_ALL)))
 	if err != nil {
 		fmt.Println("Error: " + err.Error())
 		return;
 	}
-	f := os.NewFile(uintptr(fd), fmt.Sprintf("fd %d", fd))
+	defer syscall.Close(fd)
 
-	sessions := make([]DnsSession, 128)
+	// DNS sessions
+	// map string(srcIP+transaction ID) to dstIP
+	sessions := make(map[string][]byte, 512)
 
 	for {
-		buf := make([]byte, 1024)
-		n, err := f.Read(buf)
+		buf := make([]byte, 1504)
+		n, _ ,err := syscall.Recvfrom(fd, buf, 0)
 		if err != nil {
 			fmt.Println(err)
 		}
 		if validate(buf, n) {
-			push(fd, &sessions,buf,n)
-			fmt.Println(buf[IPV4_SRC_OFFSET:IPV4_DST_OFFSET])
-			fmt.Println(buf[IPV4_DST_OFFSET:IPV4_DST_OFFSET+4])
-			fmt.Printf("%s\n",buf[DNS_OFFSET:n])
-			fmt.Println("------")
+			push(fd, sessions, buf, n)
+			pop(fd, sessions, buf, n)
 		}
-		//copy(buf[IPV4_DST_OFFSET:IPV4_DST_OFFSET+4], []byte{127,5,5,1})
-		
 	}
-	defer syscall.Close(fd)
 }
 
